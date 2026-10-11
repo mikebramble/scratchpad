@@ -1,0 +1,65 @@
+// Service worker: keeps a copy of the whole app in the browser so it opens without a network.
+// This file is generated at build time; edit src/sw.template.js instead.
+
+const VERSION = '__VERSION__';
+const FILES = __FILES__;
+
+// Other sites of yours on the same domain share this storage, so name the cache after this app's address.
+const PREFIX = `scratchpad:${self.registration.scope}:`;
+const CACHE = PREFIX + VERSION;
+
+self.addEventListener('install', (event) => {
+	event.waitUntil(
+		(async () => {
+			const cache = await caches.open(CACHE);
+
+			await Promise.all(
+				FILES.map(async (url) => {
+					// Files under assets/ carry a fingerprint of their contents in their name, so any
+					// copy of one is correct forever: reuse the one an earlier version saved, or the one
+					// the browser just downloaded for the page. That keeps the 16 MB grammar engine
+					// from being downloaded more than once. Everything else is checked with the server.
+					const fingerprinted = url.startsWith('assets/');
+					const kept = fingerprinted ? await caches.match(url) : undefined;
+					const response =
+						kept ?? (await fetch(new Request(url, { cache: fingerprinted ? 'default' : 'no-cache' })));
+					if (!response.ok) {
+						throw new Error(`Could not save ${url} for offline use (HTTP ${response.status}).`);
+					}
+					await cache.put(url, response);
+				}),
+			);
+
+			// Take over as soon as the copy is complete.
+			await self.skipWaiting();
+		})(),
+	);
+});
+
+self.addEventListener('activate', (event) => {
+	event.waitUntil(
+		(async () => {
+			for (const name of await caches.keys()) {
+				if (name.startsWith(PREFIX) && name !== CACHE) {
+					await caches.delete(name);
+				}
+			}
+			await self.clients.claim();
+		})(),
+	);
+});
+
+self.addEventListener('fetch', (event) => {
+	const { request } = event;
+	if (request.method !== 'GET' || new URL(request.url).origin !== self.location.origin) {
+		return;
+	}
+
+	// Serve the saved copy; fall back to the network for anything that is not part of the app.
+	event.respondWith(
+		(async () => {
+			const cache = await caches.open(CACHE);
+			return (await cache.match(request, { ignoreSearch: true })) ?? fetch(request);
+		})(),
+	);
+});

@@ -1,0 +1,84 @@
+diff --git a/packages/harper-editor/src/lib/Editor.svelte b/packages/harper-editor/src/lib/Editor.svelte
+index c808e7e..bbfe44b 100644
+--- a/packages/harper-editor/src/lib/Editor.svelte
++++ b/packages/harper-editor/src/lib/Editor.svelte
+@@ -28,6 +28,17 @@ export let onReady: () => void = () => null;
+ export let defaultFontFamily: EditorFontFamily = 'sans';
+ export let defaultFontSize: EditorFontSize = 'default';
+ export let onChange: (text: string) => void = () => {};
++/** Host hook: when set, the suggestion popup offers "add to dictionary" for spelling problems. */
++export let onAddToDictionary: ((words: string[]) => void | Promise<void>) | null = null;
++/** Host hook: when set, the suggestion popup offers a "disable this rule" button. */
++export let onSetRuleEnabled:
++	| ((ruleId: string, enabled: boolean) => void | Promise<void>)
++	| null = null;
++/** Host hook: called when the reader changes the font family or size, so the host can remember it. */
++export let onDisplayChange: (display: {
++	fontFamily: EditorFontFamily;
++	fontSize: EditorFontSize;
++}) => void = () => {};
+ 
+ let editor: HTMLDivElement | null;
+ let linterVersion = 0;
+@@ -46,6 +57,7 @@ let syncTimeout: ReturnType<typeof setTimeout> | null = null;
+ const sidebarTransitionDuration = 250;
+ const restoreButtonDelay = sidebarTransitionDuration + 40;
+ 
++$: onDisplayChange({ fontFamily, fontSize });
+ $: fontStack = fontStackFor(fontFamily);
+ $: editorStyle =
+ 	`--harper-editor-font-family: ${fontStack};` +
+@@ -80,6 +92,23 @@ let lfw = new LintFramework(
+ 		return grouped;
+ 	},
+ 	{
++		addToUserDictionary:
++			onAddToDictionary == null
++				? undefined
++				: async (words: string[]) => {
++						await onAddToDictionary?.(words);
++						// The dictionary changed, so re-lint now instead of waiting for the next keystroke.
++						await lfw.requestLintUpdate(true);
++						scheduleLintBoxSync();
++					},
++		setRuleEnabled:
++			onSetRuleEnabled == null
++				? undefined
++				: async (ruleId: string, enabled: boolean) => {
++						await onSetRuleEnabled?.(ruleId, enabled);
++						await lfw.requestLintUpdate(true);
++						scheduleLintBoxSync();
++					},
+ 		ignoreLint: async (hash: string) => {
+ 			try {
+ 				await linter.ignoreLintHash(BigInt(hash));
+@@ -219,9 +248,29 @@ function setQuillText(text: string, notify: boolean) {
+ 
+ 	const source = notify ? 'user' : 'silent';
+ 	quill.setText(text, source);
++	if (!notify) {
++		// Text placed by the host (such as a restored draft) is a fresh document, not an
++		// edit. Without this, pressing undo once too often rolls back the load and empties the editor.
++		quill.history?.clear();
++	}
+ 	syncDocumentText(notify);
+ }
+ 
++/**
++ * Host hook: replace the whole text as one edit of the reader's own, so that it reaches
++ * `onChange` and can be taken back with undo. Used for "clear".
++ */
++export function replaceAll(text: string) {
++	if (quill == null) {
++		return;
++	}
++
++	// Close the current undo step first, so undo restores exactly what was replaced.
++	quill.history?.cutoff();
++	quill.setText(text, 'user');
++	quill.history?.cutoff();
++}
++
+ // Keep the public text state and `onChange` callback in sync with Quill's document.
+ function syncDocumentText(notify: boolean) {
+ 	if (quill == null) {

@@ -1,0 +1,20 @@
+{
+	"name": "harper-editor",
+	"version": "2.12.0",
+	"license": "Apache-2.0",
+	"description": "Prebuilt copy of packages/harper-editor from Automattic/harper (v2.12.0) with patches/harper-editor.patch applied. Regenerate with scripts/update-harper.sh.",
+	"type": "module",
+	"sideEffects": ["**/*.css"],
+	"exports": {
+		".": {
+			"svelte": "./dist/index.js",
+			"import": "./dist/index.js",
+			"default": "./dist/index.js"
+		},
+		"./style.css": "./dist/harper-editor.css"
+	},
+	"peerDependencies": {
+		"harper.js": "^2.0.0",
+		"svelte": "^5.0.0"
+	}
+}

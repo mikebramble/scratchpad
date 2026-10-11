@@ -1,0 +1,41 @@
+/* The typefaces Harper's editor is designed around, bundled so nothing is fetched from a font CDN
+   and the editor looks the same on every machine. All are under the SIL Open Font License 1.1.
+
+   Inter is the editor's default "Sans" text face (Windows does not ship it and would fall back to
+   Arial), Atkinson Hyperlegible is used for the interface, JetBrains Mono for the status bar and
+   the "Mono" text option. */
+@font-face {
+	font-family: 'Inter';
+	font-style: normal;
+	font-weight: 100 900;
+	font-display: swap;
+	src: url('../node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2')
+		format('woff2-variations');
+}
+
+@font-face {
+	font-family: 'Atkinson Hyperlegible';
+	font-style: normal;
+	font-weight: 400;
+	font-display: swap;
+	src: url('../node_modules/@fontsource/atkinson-hyperlegible/files/atkinson-hyperlegible-latin-400-normal.woff2')
+		format('woff2');
+}
+
+@font-face {
+	font-family: 'Atkinson Hyperlegible';
+	font-style: normal;
+	font-weight: 700;
+	font-display: swap;
+	src: url('../node_modules/@fontsource/atkinson-hyperlegible/files/atkinson-hyperlegible-latin-700-normal.woff2')
+		format('woff2');
+}
+
+@font-face {
+	font-family: 'JetBrains Mono';
+	font-style: normal;
+	font-weight: 100 800;
+	font-display: swap;
+	src: url('../node_modules/@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2')
+		format('woff2-variations');
+}
