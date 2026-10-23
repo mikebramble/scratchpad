@@ -2,7 +2,7 @@ Scratchpad is built from the open-source software listed below.
 Each entry gives the license it is used under and that license in full.
 
 ==============================================================================
-Harper (grammar engine harper.js 2.10.0, editor interface 2.12.0)
+Harper (grammar engine harper.js 2.13.0, editor interface 2.13.0)
 Apache-2.0 - https://github.com/Automattic/harper
 ------------------------------------------------------------------------------
 The editor interface is built from Harper's source with the small changes in

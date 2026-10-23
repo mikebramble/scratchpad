@@ -1,5 +1,6 @@
 import { Dialect, LocalLinter, WorkerLinter } from 'harper.js';
 import { harperBinary } from 'virtual:harper-binary';
+import { addDraftDismissals } from './dismissals.js';
 
 export const DIALECTS = [
 	{ value: Dialect.American, label: 'American' },
@@ -24,15 +25,28 @@ export function normalizeDialect(value) {
  * Harper normally runs in a web worker so that checking never blocks typing. A page opened
  * straight from disk (file://) is not allowed to start that kind of worker, and Harper would
  * wait for it forever, so check first and run Harper on the page itself when workers are out.
+ *
+ * `hooks` connects the draft's dismissed problems (see dismissals.js): `dismissed()` returns
+ * them, `onDismiss(list)` hears about new ones, and `onIgnoredChange(json)` receives Harper's
+ * own ignore list on the rare occasions a dismissal has to fall back to it.
  */
-export async function createLinter(settings, onIgnoredChange) {
+export async function createLinter(settings, hooks) {
 	const Linter = (await moduleWorkersWork()) ? WorkerLinter : LocalLinter;
 	const linter = new Linter({ binary: harperBinary, dialect: settings.dialect });
 	await linter.setup();
 
 	await applySettings(linter, settings);
-	reportIgnores(linter, onIgnoredChange);
-	return linter;
+	return addDraftDismissals(linter, {
+		dismissed: hooks.dismissed,
+		onDismiss: hooks.onDismiss,
+		onHarperIgnore: async () => {
+			try {
+				hooks.onIgnoredChange(await linter.exportIgnoredLints());
+			} catch (error) {
+				console.warn('Could not save the ignore list.', error);
+			}
+		},
+	});
 }
 
 /** Try to start a do-nothing worker the same way Harper starts its own. */
@@ -67,7 +81,9 @@ function moduleWorkersWork() {
 }
 
 /**
- * Push the saved dialect, personal dictionary, disabled rules and ignored problems into Harper.
+ * Push the saved dialect, personal dictionary, switched-off rules and Harper's own ignore list
+ * into Harper. `settings.disabledRules` should hold every rule that is off, for good or just
+ * for this draft.
  *
  * Changing the dialect makes Harper rebuild its engine from scratch, which drops everything
  * else, so the whole set is always applied together and in this order.
@@ -96,24 +112,5 @@ export async function applySettings(linter, settings) {
 		} catch (error) {
 			console.warn('Saved ignore list could not be read; starting with an empty one.', error);
 		}
-	}
-}
-
-/**
- * The editor tells Harper directly when a problem is ignored, so wrap those calls to learn
- * about them and let the app save the ignore list.
- */
-function reportIgnores(linter, onIgnoredChange) {
-	for (const name of ['ignoreLint', 'ignoreLints', 'ignoreLintHash']) {
-		const original = linter[name].bind(linter);
-		linter[name] = async (...args) => {
-			const result = await original(...args);
-			try {
-				onIgnoredChange(await linter.exportIgnoredLints());
-			} catch (error) {
-				console.warn('Could not save the ignore list.', error);
-			}
-			return result;
-		};
 	}
 }

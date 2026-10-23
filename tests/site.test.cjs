@@ -140,7 +140,8 @@ function check(name, ok, detail = '') {
 	await page.waitForTimeout(900);
 	const afterIgnore = await messages();
 	check('Ignore dismisses that problem', !afterIgnore.some((m) => /Incorrect indefinite article/.test(m)) && afterIgnore.length === beforeIgnore.length - 1, `before=${beforeIgnore.length} after=${afterIgnore.length}`);
-	check('the ignore list is saved', typeof (await stored('ignored')) === 'string' && (await stored('ignored')).length > 2, String(await stored('ignored')).slice(0, 60));
+	const savedDismissals = await stored('dismissed');
+	check('the dismissal is saved with the draft', Array.isArray(savedDismissals) && savedDismissals.length === 1 && savedDismissals[0].text === 'an', JSON.stringify(savedDismissals));
 
 	// ---- 7. font size is remembered -------------------------------------------------------------
 	await page.selectOption('select[aria-label="Font size"]', '18');
@@ -289,18 +290,22 @@ function check(name, ok, detail = '') {
 	await page.waitForTimeout(900);
 	const afterRule = await messages();
 	check('disabling a rule removes that rule\'s problems', !afterRule.some((m) => /should be written as two words/.test(m)), `${disableTitle}`);
-	check('disabled rule is saved, toast offers Undo', JSON.stringify(await stored('disabledRules')) === '["OpenCompounds"]' && /Turned off.*Undo/.test(await toastText() ?? ''), JSON.stringify(await stored('disabledRules')) + ' / ' + (await toastText()));
+	check('the rule is off for this draft only; the toast offers Always and Undo', JSON.stringify(await stored('draftRules')) === '["OpenCompounds"]' && (await stored('disabledRules'))?.length === 0 && /for this draft.*Always.*Undo/.test(await toastText() ?? ''), JSON.stringify(await stored('draftRules')) + ' / ' + (await toastText()));
 
 	await page.click('button[aria-label="Settings"]');
 	await page.waitForSelector('dialog[open]');
 	await page.waitForTimeout(200);
 	await shot(page, 'site-5-settings');
-	check('settings lists the dictionary word and the disabled rule', await page.evaluate(() => document.querySelector('dialog textarea').value === 'Zorblatt' && document.querySelectorAll('dialog li').length === 1));
+	const listed = await page.evaluate(() => [...document.querySelectorAll('dialog li')].map((li) => li.innerText.replace(/\s+/g, ' ').trim()));
+	check('settings lists the dictionary word, the dismissal and the rule off for this draft', (await page.evaluate(() => document.querySelector('dialog textarea').value)) === 'Zorblatt' && listed.some((t) => /^1 dismissed problem/.test(t)) && listed.some((t) => /^Open Compounds is off/.test(t)), JSON.stringify(listed));
 	const box = await page.evaluate(() => { const r = document.querySelector('dialog').getBoundingClientRect(); return { left: Math.round(r.left), right: Math.round(innerWidth - r.right), top: Math.round(r.top), bottom: Math.round(innerHeight - r.bottom) }; });
 	check('settings dialog is centred', Math.abs(box.left - box.right) <= 1 && Math.abs(box.top - box.bottom) <= 1, JSON.stringify(box));
-	await page.click('dialog li button');
-	await page.waitForTimeout(300);
-	check('rule can be turned back on', (await stored('disabledRules'))?.length === 0);
+	await page.click('dialog li:has-text("Open Compounds") button:has-text("Always off")');
+	await page.waitForTimeout(400);
+	check('"Always off" makes it permanent', JSON.stringify(await stored('disabledRules')) === '["OpenCompounds"]' && (await stored('draftRules'))?.length === 0, JSON.stringify([await stored('disabledRules'), await stored('draftRules')]));
+	await page.click('dialog li:has-text("Open Compounds") button:has-text("Turn back on")');
+	await page.waitForTimeout(400);
+	check('rule can be turned back on', (await stored('disabledRules'))?.length === 0 && (await stored('draftRules'))?.length === 0);
 
 	// ---- 12. dictionary edits and dialect in settings -----------------------------------
 	await page.fill('dialog textarea', '');
@@ -322,6 +327,67 @@ function check(name, ok, detail = '') {
 	const british = await waitProblems('n >= 1', 5000);
 	check('British dialect flags American spellings', british, `count=${await problemCount()} kinds=${JSON.stringify(await kinds())}`);
 	await shot(page, 'site-6-british');
+
+	// ---- 12b. long sentences ------------------------------------------------------------------------
+	await page.click('button:has-text("Clear")');
+	await page.waitForTimeout(300);
+	check('Clear starts the new draft with nothing dismissed', (await stored('dismissed'))?.length === 0 && (await stored('draftRules'))?.length === 0);
+	const longSentence = 'The instrument was calibrated in the lab using a blackbody source at several temperatures and then we recieved the data from the team who processed it with their pipeline before sending it back to us for a final review of all the results and figures.';
+	await typeAll(longSentence);
+	let long = [];
+	for (let i = 0; i < 10; i++) { long = await messages(); if (long.some((t) => /words long/.test(t)) && long.some((t) => /recieved/.test(t))) break; await page.waitForTimeout(300); }
+	check('a long sentence no longer hides the problems inside it', long.some((t) => /words long/.test(t)) && long.some((t) => /recieved/.test(t)), JSON.stringify(long.map((t) => t.slice(0, 40))));
+	check('…and its warning is listed after them', /words long/.test(long[long.length - 1] ?? ''));
+	await clickWord('recieved');
+	await page.waitForSelector('harper-render-box .harper-popup');
+	const popupKind = await page.evaluate(() => [...document.querySelectorAll('harper-render-box')].map((h) => h.shadowRoot).find((r) => r?.querySelector('.harper-popup')).querySelector('.harper-popup').innerText.replace(/\s+/g, ' '));
+	check('clicking a misspelled word inside it opens the spelling fix, not the sentence warning', /received/.test(popupKind) && !/words long/.test(popupKind), popupKind.slice(0, 80));
+	await page.keyboard.press('Escape');
+	await page.mouse.click(5, 5);
+	await page.waitForTimeout(200);
+	await shot(page, 'site-7-long-sentence');
+
+	await cardFor('Readability').locator('button:has-text("Ignore")').click();
+	await page.waitForTimeout(800);
+	long = await messages();
+	check('dismissing the long-sentence warning hides it', !long.some((t) => /words long/.test(t)) && long.some((t) => /recieved/.test(t)), JSON.stringify(long.map((t) => t.slice(0, 30))));
+	await cardFor('Spelling').filter({ hasText: 'recieved' }).locator('button[title^="Replace with"]').first().click();
+	await page.waitForTimeout(900);
+	long = await messages();
+	check('…it stays dismissed after fixing a word inside the sentence', /received the data/.test(await editorText()) && !long.some((t) => /words long/.test(t)), JSON.stringify(long.map((t) => t.slice(0, 30))));
+	// Reword part of the sentence: insert a word after "calibrated".
+	await page.evaluate(() => {
+		const root = document.querySelector('.harper-editor-surface');
+		const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+		let node;
+		while ((node = walker.nextNode())) {
+			const i = node.textContent.indexOf('calibrated');
+			if (i >= 0) { const r = document.createRange(); r.setStart(node, i + 'calibrated'.length); r.collapse(true); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); root.focus(); return; }
+		}
+	});
+	await page.keyboard.type(' very carefully', { delay: 0 });
+	await page.waitForTimeout(1200);
+	long = await messages();
+	check('…and after rewording part of it', /calibrated very carefully/.test(await editorText()) && !long.some((t) => /words long/.test(t)), JSON.stringify(long.map((t) => t.slice(0, 30))));
+	await page.reload();
+	await ready();
+	await page.waitForTimeout(1500);
+	long = await messages();
+	check('…and after a reload', !long.some((t) => /words long/.test(t)), JSON.stringify(long.map((t) => t.slice(0, 30))));
+	await page.click('.harper-editor-surface');
+	await page.keyboard.press('Control+End');
+	await page.keyboard.press('Enter');
+	await page.keyboard.insertText('A completely different sentence that goes on and on about the weather in the mountains and the snow on the trails and the people who walk them every morning before work in the cold and the dark of winter, which is long.');
+	long = [];
+	for (let i = 0; i < 10; i++) { long = await messages(); if (long.some((t) => /words long/.test(t))) break; await page.waitForTimeout(300); }
+	check('a different long sentence is still flagged', long.filter((t) => /words long/.test(t)).length === 1, JSON.stringify(long.map((t) => t.slice(0, 30))));
+	await page.click('button[aria-label="Settings"]');
+	await page.waitForSelector('dialog[open]');
+	await page.click('dialog li:has-text("dismissed") button:has-text("Bring back")');
+	await page.click('dialog button:has-text("Done")');
+	long = [];
+	for (let i = 0; i < 10; i++) { long = await messages(); if (long.filter((t) => /words long/.test(t)).length === 2) break; await page.waitForTimeout(300); }
+	check('"Bring back" in Settings restores dismissed problems', long.filter((t) => /words long/.test(t)).length === 2 && (await stored('dismissed'))?.length === 0, JSON.stringify(long.map((t) => t.slice(0, 30))));
 
 	// ---- 13. offline -----------------------------------------------------------------------------------
 	const swReady = await page.evaluate(async () => {

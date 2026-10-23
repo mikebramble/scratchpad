@@ -1,0 +1,5 @@
+node_modules/
+# Harper's source, fetched by scripts/update-harper.sh
+.harper-src/
+# The single-file build (npm run build:single)
+dist-single/

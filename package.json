@@ -16,7 +16,7 @@
 		"@fontsource-variable/jetbrains-mono": "5.3.0",
 		"@fontsource/atkinson-hyperlegible": "5.3.0",
 		"harper-editor": "file:./vendor/harper-editor",
-		"harper.js": "2.10.0",
+		"harper.js": "2.13.0",
 		"svelte": "5.43.12"
 	},
 	"devDependencies": {

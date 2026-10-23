@@ -1,6 +1,7 @@
 <script>
 import { Editor } from 'harper-editor';
 import { onMount } from 'svelte';
+import { cleanDismissals, MAX_DISMISSED } from './dismissals.js';
 import { applySettings, createLinter, normalizeDialect, ruleLabel } from './linter.js';
 import Settings from './Settings.svelte';
 import { load, loadStrings, save } from './store.js';
@@ -20,11 +21,20 @@ let settings = $state.raw({
 	disabledRules: loadStrings('disabledRules'),
 });
 
-/** Harper's own record of dismissed problems (an opaque JSON string of hashes). */
+/** Harper's own ignore list (an opaque JSON string of fingerprints). Only older versions of the
+ * app added to it; it is still honoured. */
 let ignored = load('ignored', null);
 if (typeof ignored !== 'string') {
 	ignored = null;
 }
+
+// What belongs to the current draft only, and is reset by Clear:
+/** Problems dismissed in this draft (see dismissals.js). */
+let dismissed = $state.raw(cleanDismissals(load('dismissed', [])));
+/** Rules switched off for this draft only. */
+let draftRules = $state.raw(loadStrings('draftRules'));
+/** What Clear set aside, so undoing the Clear can bring it back. */
+let beforeClear = null;
 
 // --- Live state -----------------------------------------------------------------------------
 
@@ -48,11 +58,16 @@ onMount(() => {
 	}, 12000);
 
 	const startedWith = settings;
-	createLinter({ ...startedWith, ignored }, rememberIgnored).then(
+	const startedWithDraftRules = draftRules;
+	createLinter(engineSettings(), {
+		dismissed: () => dismissed,
+		onDismiss: dismiss,
+		onIgnoredChange: rememberIgnored,
+	}).then(
 		(ready) => {
 			linter = ready;
 			// Settings can be changed while the engine is still loading.
-			if (settings !== startedWith) {
+			if (settings !== startedWith || draftRules !== startedWithDraftRules) {
 				syncLinter();
 			}
 		},
@@ -103,11 +118,15 @@ function keepOfflineCopy() {
 		if (wasAlreadyInstalled) {
 			showToast({
 				message: 'A newer version is ready',
-				actionLabel: 'Reload',
-				action: () => {
-					saveDraft();
-					location.reload();
-				},
+				actions: [
+					{
+						label: 'Reload',
+						run: () => {
+							saveDraft();
+							location.reload();
+						},
+					},
+				],
 			});
 		}
 	});
@@ -152,6 +171,11 @@ function handleChange(next) {
 	text = next;
 	clearTimeout(saveTimer);
 	saveTimer = setTimeout(saveDraft, 300);
+
+	// Ctrl+Z after Clear: the old draft is back, so its dismissals and switched-off rules are too.
+	if (beforeClear != null && next === beforeClear.text && dismissed.length === 0 && draftRules.length === 0) {
+		restoreDraftState();
+	}
 }
 
 function saveDraft() {
@@ -230,14 +254,23 @@ function clearText() {
 		return;
 	}
 
-	const previousText = text;
+	// A new draft starts with nothing dismissed and every rule back on.
+	beforeClear = { text, dismissed, draftRules };
+	setDismissed([]);
+	setDraftRules([]);
 	replaceText('');
 
 	showToast({
 		message: 'Cleared. Ctrl+Z brings it back.',
-		actionLabel: 'Undo',
-		action: () => replaceText(previousText),
+		actions: [{ label: 'Undo', run: () => replaceText(beforeClear?.text ?? '') }],
 	});
+}
+
+function restoreDraftState() {
+	const saved = beforeClear;
+	beforeClear = null;
+	setDismissed(saved.dismissed);
+	setDraftRules(saved.draftRules);
 }
 
 // --- Settings that Harper needs to hear about ---------------------------------------------
@@ -245,6 +278,31 @@ function clearText() {
 function rememberIgnored(next) {
 	ignored = next;
 	save('ignored', next);
+}
+
+/** Everything Harper itself needs to know; rules off for this draft count as off. */
+function engineSettings() {
+	return {
+		...settings,
+		disabledRules: [...new Set([...settings.disabledRules, ...draftRules])],
+		ignored,
+	};
+}
+
+function dismiss(descriptions) {
+	setDismissed([...dismissed, ...descriptions]);
+}
+
+function setDismissed(next) {
+	dismissed = next.slice(-MAX_DISMISSED);
+	save('dismissed', dismissed);
+	recheck();
+}
+
+function setDraftRules(next) {
+	draftRules = next;
+	save('draftRules', next);
+	return syncLinter();
 }
 
 function updateSettings(change) {
@@ -269,7 +327,7 @@ function syncLinter() {
 	syncing = syncing
 		.then(async () => {
 			if (linter != null) {
-				await applySettings(linter, { ...settings, ignored });
+				await applySettings(linter, engineSettings());
 				recheck();
 			}
 		})
@@ -302,22 +360,53 @@ async function addToDictionary(words) {
 
 	showToast({
 		message: `Added “${added.join('”, “')}” to your dictionary`,
-		actionLabel: 'Undo',
-		action: () => updateSettings({ words: settings.words.filter((word) => !added.includes(word)) }),
+		actions: [
+			{
+				label: 'Undo',
+				run: () => updateSettings({ words: settings.words.filter((word) => !added.includes(word)) }),
+			},
+		],
 	});
 }
 
+/**
+ * The popup's "Disable rule" button. It switches the rule off for this draft only; the toast
+ * offers to make that permanent.
+ */
 async function setRuleEnabled(rule, enabled) {
-	const others = settings.disabledRules.filter((name) => name !== rule);
-	await updateSettings({ disabledRules: enabled ? others : [...others, rule] });
-
-	if (!enabled) {
-		showToast({
-			message: `Turned off the “${ruleLabel(rule)}” rule`,
-			actionLabel: 'Undo',
-			action: () => setRuleEnabled(rule, true),
-		});
+	if (enabled) {
+		await turnRuleBackOn(rule);
+		return;
 	}
+
+	if (!draftRules.includes(rule) && !settings.disabledRules.includes(rule)) {
+		await setDraftRules([...draftRules, rule]);
+	}
+
+	showToast({
+		message: `Turned off “${ruleLabel(rule)}” for this draft`,
+		actions: [
+			{ label: 'Always', run: () => turnRuleOffForGood(rule) },
+			{ label: 'Undo', run: () => turnRuleBackOn(rule) },
+		],
+	});
+}
+
+async function turnRuleOffForGood(rule) {
+	draftRules = draftRules.filter((name) => name !== rule);
+	save('draftRules', draftRules);
+	if (!settings.disabledRules.includes(rule)) {
+		await updateSettings({ disabledRules: [...settings.disabledRules, rule] });
+	} else {
+		await syncLinter();
+	}
+	showToast({ message: `“${ruleLabel(rule)}” is off for good. Settings can turn it back on.` });
+}
+
+async function turnRuleBackOn(rule) {
+	draftRules = draftRules.filter((name) => name !== rule);
+	save('draftRules', draftRules);
+	await updateSettings({ disabledRules: settings.disabledRules.filter((name) => name !== rule) });
 }
 
 // --- Toast -------------------------------------------------------------------------------------
@@ -329,15 +418,14 @@ function showToast(next) {
 		() => {
 			toast = null;
 		},
-		next.action ? 8000 : 2500,
+		next.actions?.length ? 8000 : 2500,
 	);
 }
 
-async function runToastAction() {
-	const action = toast?.action;
+async function runToastAction(action) {
 	clearTimeout(toastTimer);
 	toast = null;
-	await action?.();
+	await action.run();
 }
 </script>
 
@@ -412,16 +500,21 @@ async function runToastAction() {
 	{#if toast}
 		<div class="toast" role="status">
 			<span>{toast.message}</span>
-			{#if toast.action}
-				<button type="button" onclick={runToastAction}>{toast.actionLabel}</button>
-			{/if}
+			{#each toast.actions ?? [] as action}
+				<button type="button" onclick={() => runToastAction(action)}>{action.label}</button>
+			{/each}
 		</div>
 	{/if}
 
 	{#if showSettings}
 		<Settings
 			{settings}
+			{draftRules}
+			dismissedCount={dismissed.length}
 			onChange={updateSettings}
+			onTurnRuleBackOn={turnRuleBackOn}
+			onTurnRuleOffForGood={turnRuleOffForGood}
+			onBringBackDismissed={() => setDismissed([])}
 			onClose={() => {
 				showSettings = false;
 				focusEditor();

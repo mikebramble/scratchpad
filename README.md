@@ -20,8 +20,10 @@ leaves your computer, and the page makes no requests to any other site.
 - **Copy text** puts the whole text on the clipboard as plain text. Ctrl+C and Ctrl+X give plain
   text too, so nothing odd comes along when you paste into mail or chat.
 - Your draft is saved as you type and is still there next time.
-- **Add to dictionary** for names and jargon, and **disable rule** for checks you don't want. Both
-  can be reviewed and undone in Settings.
+- **Add to dictionary** for names and jargon, and **disable rule** for checks you don't want, either
+  for the current draft or for good. Both can be reviewed and undone in Settings.
+- **Dismiss** a suggestion and it stays dismissed for the rest of the draft, even after you edit
+  the sentence around it. **Clear** starts a new draft with nothing dismissed.
 - American, British, Canadian, Australian and Indian English.
 - Works offline once loaded, and can be installed as an app.
 
@@ -37,15 +39,6 @@ dock icon, and works offline. When a new version is published, the app offers to
 **Your data.** The draft, dictionary and settings are kept in your browser's local storage for this
 site. They are not synced between browsers or devices, and clearing the site's data in your browser
 erases them. To keep your dictionary, copy it out of Settings first.
-
-## Running your own copy
-
-The `docs/` folder is the complete, prebuilt site. To host on GitHub Pages:
-
-There is also a single-file version: `npm run build:single` (see below) produces
-`dist-single/index.html`, a self-contained file of about 22 MB that runs when opened straight from
-disk, with no server at all. It keeps its own draft and dictionary, separate from the hosted site's,
-and runs Harper on the page rather than a background thread, so very long texts are less smooth.
 
 ## Building from source
 
@@ -67,6 +60,7 @@ npm test               # browser tests against both builds (build them first)
 | `src/App.svelte` | Toolbar, saving, clipboard handling, notifications |
 | `src/Settings.svelte` | The settings dialog |
 | `src/linter.js` | Starts Harper and applies dialect, dictionary and rule settings |
+| `src/dismissals.js` | Dismissals that survive edits, and how overlapping problems are shown |
 | `src/sw.template.js` | Service worker that keeps the offline copy |
 | `vendor/harper-editor/` | Harper's editor interface, prebuilt |
 | `patches/harper-editor.patch` | The changes made to Harper's editor |
@@ -84,7 +78,7 @@ Settings):
 - **The editor interface** is not published to npm, so it is built from Harper's GitHub repository:
 
   ```
-  scripts/update-harper.sh v2.12.0     # any Harper release tag
+  scripts/update-harper.sh v2.13.0     # any Harper release tag
   ```
 
   This needs bash (Git Bash or WSL on Windows), git and pnpm 10 (`corepack enable`). It takes about
@@ -99,7 +93,8 @@ After updating either part: `npm install`, `npm run build:all`, `npm test`, then
 `patches/harper-editor.patch` is a small change to Harper's editor component. It adds optional
 hooks for adding words to a dictionary, enabling or disabling rules, remembering the font, and
 replacing the whole text as an undoable edit. It also stops a loaded draft from counting as an edit,
-so pressing Ctrl+Z once too often after reopening can't empty the editor. If a future Harper release
+so pressing Ctrl+Z once too often after reopening can't empty the editor, and lists a problem that
+wraps onto several lines once instead of once per line. If a future Harper release
 changes those lines, the update script stops at the patch step and the patch needs adjusting.
 
 ## Known limitations

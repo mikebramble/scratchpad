@@ -1,5 +1,5 @@
 diff --git a/packages/harper-editor/src/lib/Editor.svelte b/packages/harper-editor/src/lib/Editor.svelte
-index c808e7e..bbfe44b 100644
+index c808e7e..38b4d88 100644
 --- a/packages/harper-editor/src/lib/Editor.svelte
 +++ b/packages/harper-editor/src/lib/Editor.svelte
 @@ -28,6 +28,17 @@ export let onReady: () => void = () => null;
@@ -82,3 +82,20 @@ index c808e7e..bbfe44b 100644
  // Keep the public text state and `onChange` callback in sync with Quill's document.
  function syncDocumentText(notify: boolean) {
  	if (quill == null) {
+@@ -241,7 +290,15 @@ function syncDocumentText(notify: boolean) {
+ 
+ // The lint framework owns highlight DOM, so copy its latest boxes into Svelte state.
+ function syncLintBoxes() {
+-	lintBoxes = [...lfw.getLastIgnorableLintBoxes()];
++	// A problem that wraps onto several lines gets one box per line. List and count it once.
++	const seen = new Set();
++	lintBoxes = lfw.getLastIgnorableLintBoxes().filter((lintBox) => {
++		if (seen.has(lintBox.lint)) {
++			return false;
++		}
++		seen.add(lintBox.lint);
++		return true;
++	});
+ 	if (
+ 		activeLintId != null &&
+ 		!lintBoxes.some((lintBox) => lintBox.lint.context_hash === activeLintId)

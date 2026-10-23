@@ -20,7 +20,7 @@
 
 set -euo pipefail
 
-TAG="${1:-v2.12.0}"
+TAG="${1:-v2.13.0}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK="${HARPER_WORKDIR:-$ROOT/.harper-src}"
 ENGINE="$(node -p "require('$ROOT/package.json').dependencies['harper.js']")"

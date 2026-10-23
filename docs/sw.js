@@ -1,15 +1,15 @@
 // Service worker: keeps a copy of the whole app in the browser so it opens without a network.
 // This file is generated at build time; edit src/sw.template.js instead.
 
-const VERSION = 'cdfe729c39e3';
+const VERSION = '299e28768c0d';
 const FILES = [
 	"./",
 	"THIRD-PARTY-NOTICES.txt",
 	"assets/atkinson-hyperlegible-latin-400-normal-BrHNak5F.woff2",
 	"assets/atkinson-hyperlegible-latin-700-normal-GZI4o3u0.woff2",
-	"assets/harper_wasm_slim_bg-ChaU7UNk.wasm",
-	"assets/index-C2UJvxra.css",
-	"assets/index-DyWJ51pb.js",
+	"assets/harper_wasm_slim_bg-C6e6Uio8.wasm",
+	"assets/index-ChKpEXB3.js",
+	"assets/index-UokWeuJO.css",
 	"assets/inter-latin-wght-normal-Dx4kXJAl.woff2",
 	"assets/jetbrains-mono-latin-wght-normal-B9CIFXIH.woff2",
 	"assets/quill-v-dZfs5K-DJFA0Zpi.js",

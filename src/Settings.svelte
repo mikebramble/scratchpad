@@ -2,7 +2,16 @@
 import { onMount } from 'svelte';
 import { DIALECTS, ruleLabel } from './linter.js';
 
-let { settings, onChange, onClose } = $props();
+let {
+	settings,
+	draftRules,
+	dismissedCount,
+	onChange,
+	onTurnRuleBackOn,
+	onTurnRuleOffForGood,
+	onBringBackDismissed,
+	onClose,
+} = $props();
 
 let dialog;
 /** The dictionary as editable text, one word per line. Saved when the dialog closes. */
@@ -46,9 +55,6 @@ function openLicenses() {
 	window.open(url, '_blank', 'noopener');
 }
 
-function enableRule(rule) {
-	onChange({ disabledRules: settings.disabledRules.filter((name) => name !== rule) });
-}
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
@@ -82,14 +88,44 @@ function enableRule(rule) {
 			<textarea id="words" rows="7" spellcheck="false" bind:value={wordsDraft}></textarea>
 		</section>
 
+		{#if dismissedCount > 0 || draftRules.length > 0}
+			<section>
+				<h3>This draft</h3>
+				<p>Kept until you press Clear.</p>
+				<ul>
+					{#if dismissedCount > 0}
+						<li>
+							<span>{dismissedCount} dismissed {dismissedCount === 1 ? 'problem' : 'problems'}</span>
+							<button type="button" class="link" onclick={onBringBackDismissed}>Bring back</button>
+						</li>
+					{/if}
+					{#each draftRules as rule}
+						<li>
+							<span>{ruleLabel(rule)} is off</span>
+							<span class="actions">
+								<button type="button" class="link" onclick={() => onTurnRuleOffForGood(rule)}>
+									Always off
+								</button>
+								<button type="button" class="link" onclick={() => onTurnRuleBackOn(rule)}>
+									Turn back on
+								</button>
+							</span>
+						</li>
+					{/each}
+				</ul>
+			</section>
+		{/if}
+
 		{#if settings.disabledRules.length > 0}
 			<section>
-				<h3>Rules you turned off</h3>
+				<h3>Rules turned off for good</h3>
 				<ul>
 					{#each settings.disabledRules as rule}
 						<li>
 							<span>{ruleLabel(rule)}</span>
-							<button type="button" class="link" onclick={() => enableRule(rule)}>Turn back on</button>
+							<button type="button" class="link" onclick={() => onTurnRuleBackOn(rule)}>
+								Turn back on
+							</button>
 						</li>
 					{/each}
 				</ul>
@@ -231,6 +267,12 @@ function enableRule(rule) {
 		background: #1c1a16;
 		color: #fbfaf6;
 		font-weight: 700;
+	}
+
+	.actions {
+		display: inline-flex;
+		flex: 0 0 auto;
+		gap: 14px;
 	}
 
 	.link {
